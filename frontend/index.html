@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>♟ Vision Chess</title>
+
+  <!-- chessboard.js CSS (CDN) -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+        crossorigin="anonymous" />
+
+  <!-- Our styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="site-header">
+    <h1>♟ Vision Chess</h1>
+    <p class="subtitle">Upload a chess board photo to play the position</p>
+  </header>
+
+  <!-- ===== Main content ===== -->
+  <main class="container">
+
+    <!-- Upload card -->
+    <section class="card" id="upload-card">
+      <h2>Upload a Board Photo</h2>
+
+      <!-- Drag-and-drop / click zone -->
+      <div class="drop-zone" id="drop-zone" tabindex="0" role="button"
+           aria-label="Drag and drop a chess board image or click to select">
+        <span class="drop-icon">📷</span>
+        <p class="drop-text">Drag &amp; drop an image here<br/>or <strong>click to browse</strong></p>
+        <input type="file" id="file-input" accept="image/*" hidden />
+      </div>
+
+      <!-- Image preview -->
+      <div class="preview-container" id="preview-container" hidden>
+        <img id="preview-img" src="" alt="Selected chess board preview" />
+      </div>
+
+      <!-- Detect button -->
+      <button class="btn btn-primary" id="detect-btn" disabled>Detect Board</button>
+
+      <!-- Status / error message -->
+      <div class="status-message" id="status-message" aria-live="polite"></div>
+
+      <!-- Loading spinner -->
+      <div class="spinner" id="spinner" hidden aria-label="Detecting board…"></div>
+    </section>
+
+    <!-- Result card (shown after detection) -->
+    <section class="card" id="result-card" hidden>
+      <h2>Play the Detected Position</h2>
+
+      <!-- chessboard.js render target -->
+      <div id="board-container">
+        <div id="chess-board"></div>
+      </div>
+
+      <!-- FEN display -->
+      <div class="fen-section">
+        <label for="fen-display">Detected FEN</label>
+        <div class="fen-row">
+          <input type="text" id="fen-display" readonly aria-label="FEN string" />
+          <button class="btn btn-secondary" id="copy-fen-btn" title="Copy FEN">⎘ Copy</button>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls">
+        <button class="btn btn-toggle active" id="play-white-btn">Play as White</button>
+        <button class="btn btn-toggle" id="play-black-btn">Play as Black</button>
+        <button class="btn btn-secondary" id="reset-btn">↺ Reset Position</button>
+        <button class="btn btn-secondary" id="new-upload-btn">⬆ New Upload</button>
+      </div>
+
+      <!-- Move status -->
+      <div class="move-status" id="move-status" aria-live="polite"></div>
+    </section>
+
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="site-footer">
+    <p>Vision Chess — powered by OpenCV &amp; FastAPI</p>
+  </footer>
+
+  <!-- ===== Scripts ===== -->
+  <!-- jQuery (required by chessboard.js) -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+          integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+          crossorigin="anonymous"></script>
+
+  <!-- chess.js (move validation) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"
+          crossorigin="anonymous"></script>
+
+  <!-- chessboard.js (board rendering) -->
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"
+          crossorigin="anonymous"></script>
+
+  <!-- Our app logic -->
+  <script src="app.js"></script>
+
+</body>
+</html>
