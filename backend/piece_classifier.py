@@ -2,21 +2,81 @@
 piece_classifier.py
 -------------------
 Classifies chess pieces in each square of a perspective-corrected 800×800
-board image using classical OpenCV heuristics.
+board image.
 
-IMPORTANT: These heuristics are an intentional MVP.
-# TODO: Replace with ML model (e.g. YOLOv8 via ultralytics) for higher accuracy.
+Primary path  (when piece_model.joblib is present):
+  HOG feature extraction → trained SVM classifier loaded via joblib.
+
+Fallback path (when no model file exists):
+  Classical OpenCV heuristics (edge density, blob aspect ratio, circularity,
+  diagonal gradients).
 
 Pipeline per square:
   1. Determine empty vs. occupied  — via pixel variance + edge density.
-  2. Determine piece colour        — via average brightness of the centre region.
-  3. Determine piece type          — via edge density, blob shape, and aspect
-                                     ratio heuristics.
+  2. If occupied and model available → HOG + SVM inference.
+  3. If no model → heuristic colour + piece-type classification.
 """
+
+import os
+import warnings
 
 import cv2
 import numpy as np
 from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Optional ML dependencies (skimage / joblib)
+# ---------------------------------------------------------------------------
+
+try:
+    import joblib
+    from skimage.feature import hog as sk_hog
+    _ML_AVAILABLE = True
+except ImportError:
+    warnings.warn(
+        "scikit-image or joblib not installed — falling back to heuristic "
+        "piece classifier.  Run: pip install scikit-image joblib",
+        stacklevel=1,
+    )
+    _ML_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# Model loading (lazy)
+# ---------------------------------------------------------------------------
+
+_MODEL_PATH = os.path.join(os.path.dirname(__file__), "piece_model.joblib")
+_model = None  # loaded lazily on first inference call
+
+
+def _load_model():
+    """Load the SVM model from disk on first call; return None if unavailable."""
+    global _model
+    if not _ML_AVAILABLE:
+        return None
+    if _model is None and os.path.exists(_MODEL_PATH):
+        try:
+            _model = joblib.load(_MODEL_PATH)
+        except Exception as exc:
+            warnings.warn(f"Failed to load piece model: {exc}", stacklevel=1)
+            _model = None
+    return _model
+
+
+# ---------------------------------------------------------------------------
+# HOG feature extraction
+# ---------------------------------------------------------------------------
+
+def _hog_features(gray: np.ndarray) -> np.ndarray:
+    """Extract HOG feature vector from a grayscale 100×100 square image."""
+    resized = cv2.resize(gray, (100, 100))
+    features = sk_hog(
+        resized,
+        orientations=9,
+        pixels_per_cell=(10, 10),
+        cells_per_block=(2, 2),
+        block_norm="L2-Hys",
+    )
+    return features
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +261,6 @@ def classify_pieces(board_img: np.ndarray) -> list[list[Optional[str]]]:
         8×8 grid (row 0 = rank 8, col 0 = file a).
         Each cell is a piece code ('K','Q','R','B','N','P' for white;
         lowercase for black) or None for an empty square.
-
-    # TODO: Replace with ML model (e.g. YOLOv8 via ultralytics) for higher accuracy.
     """
     if board_img.shape[:2] != (BOARD_SIZE, BOARD_SIZE):
         board_img = cv2.resize(board_img, (BOARD_SIZE, BOARD_SIZE))
@@ -217,10 +275,21 @@ def classify_pieces(board_img: np.ndarray) -> list[list[Optional[str]]]:
             if _is_empty(square):
                 rank_row.append(None)
             else:
-                color = _piece_color(square)
-                piece_type = _classify_piece_type(square)
-                code = piece_type if color == "white" else piece_type.lower()
-                rank_row.append(code)
+                model = _load_model()
+                if model is not None:
+                    gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
+                    feat = _hog_features(gray).reshape(1, -1)
+                    label = model.predict(feat)[0]
+                    if label == "empty":
+                        rank_row.append(None)
+                    else:
+                        rank_row.append(label)
+                else:
+                    # Heuristic fallback
+                    color = _piece_color(square)
+                    piece_type = _classify_piece_type(square)
+                    code = piece_type if color == "white" else piece_type.lower()
+                    rank_row.append(code)
 
         piece_map.append(rank_row)
 

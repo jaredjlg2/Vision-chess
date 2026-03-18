@@ -4,19 +4,22 @@ main.py
 FastAPI entry-point for Vision Chess.
 
 Endpoints:
-  GET  /health          → health check
-  POST /api/detect      → accepts a chess-board photo; returns a FEN string
+  GET  /health                       → health check
+  POST /api/detect                   → accepts a chess-board photo; returns a FEN string
+  POST /api/collect-training-data    → save labeled square images for classifier training
 """
 
 import io
+import os
 import traceback
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 
 from board_detector import detect_board
+from collect_training_data import collect_squares
 from piece_classifier import classify_pieces
 from fen_builder import build_fen
 
@@ -111,6 +114,76 @@ async def detect(file: UploadFile = File(...)) -> JSONResponse:
             content={
                 "success": False,
                 "fen": None,
+                "message": "An internal error occurred while processing the image.",
+            },
+        )
+
+
+@app.post("/api/collect-training-data")
+async def collect_training_data(
+    file: UploadFile = File(...),
+    fen: str = Form(
+        default="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    ),
+) -> JSONResponse:
+    """
+    Accept a board photo and an optional FEN string, run board detection, and
+    save all 64 square images as labeled PNG files under ``training_data/``.
+
+    Response (success):
+        { "success": true, "squares_saved": <n>,
+          "message": "Saved <n> labeled squares to training_data/." }
+
+    Response (error):
+        { "success": false, "squares_saved": 0, "message": "<human-readable error>" }
+    """
+    if file.content_type and not file.content_type.startswith("image/"):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "squares_saved": 0,
+                "message": (
+                    f"Unsupported file type '{file.content_type}'. "
+                    "Please upload an image."
+                ),
+            },
+        )
+
+    try:
+        raw_bytes = await file.read()
+        pil_image = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+
+        warped = detect_board(pil_image)
+
+        training_dir = os.path.join(os.path.dirname(__file__), "training_data")
+        count = collect_squares(warped, fen, output_dir=training_dir)
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "squares_saved": count,
+                "message": f"Saved {count} labeled squares to training_data/.",
+            }
+        )
+
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "squares_saved": 0,
+                "message": str(exc),
+            },
+        )
+
+    except Exception:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "squares_saved": 0,
                 "message": "An internal error occurred while processing the image.",
             },
         )
