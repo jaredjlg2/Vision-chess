@@ -20,7 +20,7 @@
 // same origin, so a relative URL works out of the box.
 // For manual local development (opening index.html directly without nginx),
 // change this to 'http://localhost:8000'.
-const API_URL = '';
+const API_URL = 'http://127.0.0.1:8010';
 
 /* ------------------------------------------------------------------ */
 /* DOM references                                                       */

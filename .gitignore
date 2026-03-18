@@ -211,3 +211,13 @@ backend/training_data/**/*.png
 backend/training_data/**/*.jpg
 backend/training_data/**/*.jpeg
 backend/piece_model.joblib
+
+# Ignore trained models
+backend/piece_model.joblib
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
