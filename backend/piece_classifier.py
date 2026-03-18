@@ -28,6 +28,36 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Case-safe label helpers (inference-time reverse mapping)
+# ---------------------------------------------------------------------------
+# Note: collect_training_data._fen_from_safe_label serves the same purpose
+# but returns the string "empty" instead of None, because it is used for
+# data-recovery tooling.  Here we return None for "empty" to match the
+# convention in classify_pieces() where None means an unoccupied square.
+
+
+def _fen_from_safe_label(safe: str) -> Optional[str]:
+    """Convert a safe folder-name label back to a FEN character.
+
+    The trained model predicts safe labels like ``"white_P"``, ``"black_r"``,
+    or ``"empty"``.  This function maps them back to the FEN character expected
+    by ``classify_pieces``:
+
+    * ``"white_P"`` → ``"P"``
+    * ``"black_r"`` → ``"r"``
+    * ``"empty"``   → ``None``  (empty square — no FEN character)
+    """
+    if safe == "empty":
+        return None
+    if safe.startswith("white_"):
+        return safe[len("white_"):]
+    if safe.startswith("black_"):
+        return safe[len("black_"):]
+    # Legacy single-char label (training data collected before this fix):
+    # return as-is so old models continue to work until data is re-collected.
+    return safe if safe else None
+
+# ---------------------------------------------------------------------------
 # Optional ML dependencies (skimage / joblib)
 # ---------------------------------------------------------------------------
 
@@ -297,11 +327,8 @@ def classify_pieces(board_img: np.ndarray) -> list[list[Optional[str]]]:
                 if model is not None:
                     gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
                     feat = _hog_features(gray).reshape(1, -1)
-                    label = model.predict(feat)[0]
-                    if label == "empty":
-                        rank_row.append(None)
-                    else:
-                        rank_row.append(label)
+                    safe = model.predict(feat)[0]
+                    rank_row.append(_fen_from_safe_label(safe))
                 else:
                     # Heuristic fallback
                     color = _piece_color(square)

@@ -18,6 +18,49 @@ _SQUARE_SIZE = 100
 _GRID_CELLS = 8
 _BOARD_SIZE = _SQUARE_SIZE * _GRID_CELLS  # 800
 
+# ---------------------------------------------------------------------------
+# Case-safe label helpers
+# ---------------------------------------------------------------------------
+# On case-insensitive filesystems (macOS default, Windows), folder names that
+# differ only by case — e.g. "P" vs "p" — are treated as the same directory.
+# We therefore prefix white-piece labels with "white_" and black-piece labels
+# with "black_" so that every label maps to a unique, case-safe folder name.
+
+
+def _safe_label(fen_char: str) -> str:
+    """Map a FEN character (or ``"empty"``) to a case-safe folder name.
+
+    Examples::
+
+        _safe_label("P")     → "white_P"
+        _safe_label("p")     → "black_p"
+        _safe_label("empty") → "empty"
+    """
+    if fen_char == "empty":
+        return "empty"
+    if fen_char.isupper():
+        return f"white_{fen_char}"
+    return f"black_{fen_char}"
+
+
+def _fen_from_safe_label(safe: str) -> str:
+    """Recover the original FEN character from a case-safe folder name.
+
+    Examples::
+
+        _fen_from_safe_label("white_P") → "P"
+        _fen_from_safe_label("black_r") → "r"
+        _fen_from_safe_label("empty")   → "empty"
+    """
+    if safe == "empty":
+        return "empty"
+    if safe.startswith("white_"):
+        return safe[len("white_"):]
+    if safe.startswith("black_"):
+        return safe[len("black_"):]
+    # Fallback: return as-is (handles any legacy single-char label)
+    return safe
+
 
 def _parse_fen_to_grid(fen: str) -> list[list[str]]:
     """
@@ -93,8 +136,10 @@ def collect_squares(
             # Ensure patch is exactly 100×100 (handles edge rounding)
             patch = cv2.resize(patch, (_SQUARE_SIZE, _SQUARE_SIZE))
 
-            # Create label directory
-            label_dir = os.path.join(output_dir, label)
+            # Create label directory using a case-safe folder name so that
+            # white and black pieces of the same type are never merged on
+            # case-insensitive filesystems (macOS default, Windows).
+            label_dir = os.path.join(output_dir, _safe_label(label))
             os.makedirs(label_dir, exist_ok=True)
 
             # Save with a unique filename
