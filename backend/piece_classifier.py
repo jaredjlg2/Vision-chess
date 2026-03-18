@@ -17,12 +17,15 @@ Pipeline per square:
   3. If no model → heuristic colour + piece-type classification.
 """
 
+import logging
 import os
 import warnings
 
 import cv2
 import numpy as np
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional ML dependencies (skimage / joblib)
@@ -60,6 +63,16 @@ def _load_model():
             warnings.warn(f"Failed to load piece model: {exc}", stacklevel=1)
             _model = None
     return _model
+
+
+def reload_model() -> None:
+    """
+    Invalidate the in-memory model cache so the next inference call reloads
+    ``piece_model.joblib`` from disk.  Call this after training a new model.
+    """
+    global _model
+    _model = None
+    logger.info("Piece classifier model cache cleared; will reload from disk on next call.")
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +278,12 @@ def classify_pieces(board_img: np.ndarray) -> list[list[Optional[str]]]:
     if board_img.shape[:2] != (BOARD_SIZE, BOARD_SIZE):
         board_img = cv2.resize(board_img, (BOARD_SIZE, BOARD_SIZE))
 
+    model = _load_model()
+    if model is not None:
+        logger.debug("classify_pieces: using trained SVM model for inference.")
+    else:
+        logger.debug("classify_pieces: no model available, falling back to heuristic classifier.")
+
     piece_map: list[list[Optional[str]]] = []
 
     for row in range(GRID_CELLS):
@@ -275,7 +294,6 @@ def classify_pieces(board_img: np.ndarray) -> list[list[Optional[str]]]:
             if _is_empty(square):
                 rank_row.append(None)
             else:
-                model = _load_model()
                 if model is not None:
                     gray = cv2.cvtColor(square, cv2.COLOR_BGR2GRAY)
                     feat = _hog_features(gray).reshape(1, -1)

@@ -73,19 +73,30 @@ def _extract_hog(image_path: str) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Training logic (importable)
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    if not os.path.isdir(TRAINING_DATA_DIR):
-        print(
-            f"ERROR: Training data directory not found: {TRAINING_DATA_DIR}\n"
-            "  Run the app and POST to /api/collect-training-data first.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+def train_model() -> dict:
+    """
+    Train the HOG+SVM classifier from labeled images in ``training_data/``.
 
-    print(f"Scanning training data in: {TRAINING_DATA_DIR}")
+    Returns
+    -------
+    dict
+        ``{"samples": int, "accuracy": float, "report": str, "label_counts": dict[str, int]}``
+
+    Raises
+    ------
+    FileNotFoundError
+        If the training data directory does not exist.
+    ValueError
+        If no training images are found.
+    """
+    if not os.path.isdir(TRAINING_DATA_DIR):
+        raise FileNotFoundError(
+            f"Training data directory not found: {TRAINING_DATA_DIR}\n"
+            "  Run the app and POST to /api/collect-training-data first."
+        )
 
     X: list[np.ndarray] = []
     y: list[str] = []
@@ -102,7 +113,6 @@ def main() -> None:
         ]
 
         if not images:
-            print(f"  [{label}] No images found — skipping.")
             continue
 
         for filename in images:
@@ -111,46 +121,67 @@ def main() -> None:
                 features = _extract_hog(path)
                 X.append(features)
                 y.append(label)
-            except (IOError, cv2.error, Exception) as exc:
-                print(f"  WARNING: Skipping {path}: {exc}", file=sys.stderr)
+            except (IOError, cv2.error, Exception):
+                pass
 
         label_counts[label] = len(images)
-        print(f"  [{label}] {len(images)} images loaded.")
 
     if len(X) == 0:
-        print(
-            "ERROR: No training images found.  Collect data first.",
-            file=sys.stderr,
+        raise ValueError(
+            "No training images found.  Collect data first via "
+            "POST /api/collect-training-data."
         )
-        sys.exit(1)
 
     X_arr = np.array(X)
     y_arr = np.array(y)
-
-    print(f"\nTotal samples: {len(X_arr)}")
-    print(f"Feature vector length: {X_arr.shape[1]}")
 
     # --- Train / test split ---
     X_train, X_test, y_train, y_test = train_test_split(
         X_arr, y_arr, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y_arr
     )
-    print(f"Training set: {len(X_train)}  |  Test set: {len(X_test)}")
 
     # --- Train SVM ---
-    print("\nTraining SVM (this may take a moment)…")
     clf = SVC(kernel=SVM_KERNEL, C=SVM_C, gamma=SVM_GAMMA, probability=True)
     clf.fit(X_train, y_train)
-    print("Training complete.")
 
     # --- Evaluate ---
     y_pred = clf.predict(X_test)
-    print("\nClassification report:")
-    print(classification_report(y_test, y_pred))
+    report = classification_report(y_test, y_pred)
+
+    correct = int(np.sum(y_pred == y_test))
+    accuracy = correct / len(y_test) if len(y_test) > 0 else 0.0
 
     # --- Save model ---
     joblib.dump(clf, MODEL_OUTPUT_PATH)
+
+    return {
+        "samples": int(len(X_arr)),
+        "accuracy": round(accuracy, 4),
+        "report": report,
+        "label_counts": label_counts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# CLI entry-point
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    print(f"Scanning training data in: {TRAINING_DATA_DIR}")
+    try:
+        result = train_model()
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"\nTotal samples: {result['samples']}")
+    for label, count in sorted(result["label_counts"].items()):
+        print(f"  [{label}] {count} images loaded.")
+    print(f"\nAccuracy: {result['accuracy']:.4f}")
+    print("\nClassification report:")
+    print(result["report"])
     print(f"Model saved to: {MODEL_OUTPUT_PATH}")
-    print("\nDone!  Restart the backend to pick up the new model.")
+    print("\nDone!  The backend will pick up the new model on the next inference call.")
 
 
 if __name__ == "__main__":

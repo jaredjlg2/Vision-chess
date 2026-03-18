@@ -7,6 +7,7 @@ Endpoints:
   GET  /health                       → health check
   POST /api/detect                   → accepts a chess-board photo; returns a FEN string
   POST /api/collect-training-data    → save labeled square images for classifier training
+  POST /api/train                    → train the HOG+SVM classifier from collected data
 """
 
 import io
@@ -20,8 +21,9 @@ from PIL import Image
 
 from board_detector import detect_board
 from collect_training_data import collect_squares
-from piece_classifier import classify_pieces
+from piece_classifier import classify_pieces, reload_model
 from fen_builder import build_fen
+from train_classifier import train_model
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -185,5 +187,63 @@ async def collect_training_data(
                 "success": False,
                 "squares_saved": 0,
                 "message": "An internal error occurred while processing the image.",
+            },
+        )
+
+
+@app.post("/api/train")
+async def train() -> JSONResponse:
+    """
+    Trigger training of the HOG+SVM piece classifier from the labeled images
+    that have been collected via ``/api/collect-training-data``.
+
+    After successful training the in-memory model cache is invalidated so the
+    new model is used immediately — no restart required.
+
+    Response (success):
+        { "success": true, "samples": <n>, "accuracy": <float>,
+          "report": "<classification report>", "message": "..." }
+
+    Response (error):
+        { "success": false, "message": "<human-readable error>" }
+    """
+    try:
+        result = train_model()
+
+        # Invalidate the cached model so the next inference call loads the
+        # freshly trained file from disk.
+        reload_model()
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "samples": result["samples"],
+                "accuracy": result["accuracy"],
+                "report": result["report"],
+                "message": (
+                    f"Training complete. "
+                    f"{result['samples']} samples, "
+                    f"accuracy {result['accuracy']:.2%}. "
+                    "Model is now active."
+                ),
+            }
+        )
+
+    except (FileNotFoundError, ValueError) as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "message": str(exc),
+            },
+        )
+
+    except Exception:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "message": "An internal error occurred during training.",
             },
         )
