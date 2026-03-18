@@ -207,10 +207,10 @@ marimo/_lsp/
 __marimo__/
 
 # Vision Chess ML training artifacts
-backend/training_data/**/*.png
-backend/training_data/**/*.jpg
-backend/training_data/**/*.jpeg
-backend/piece_model.joblib
+# backend/training_data/**/*.png
+# backend/training_data/**/*.jpg
+# backend/training_data/**/*.jpeg
+# backend/piece_model.joblib
 
 # Ignore trained models
 backend/piece_model.joblib
