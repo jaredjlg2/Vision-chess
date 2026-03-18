@@ -19,14 +19,30 @@ Output:
 
 import os
 import sys
+import warnings
 
 import cv2
-import joblib
 import numpy as np
-from skimage.feature import hog as sk_hog
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
+
+# ---------------------------------------------------------------------------
+# Optional ML dependencies (joblib / scikit-image / scikit-learn)
+# ---------------------------------------------------------------------------
+
+try:
+    import joblib
+    from skimage.feature import hog as sk_hog
+    from sklearn.metrics import classification_report
+    from sklearn.model_selection import train_test_split
+    from sklearn.svm import SVC
+    _ML_AVAILABLE = True
+except ImportError:
+    warnings.warn(
+        "scikit-image, joblib, or scikit-learn not installed — "
+        "the /api/train endpoint will be unavailable.  "
+        "Run: pip install scikit-image joblib scikit-learn",
+        stacklevel=1,
+    )
+    _ML_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -87,11 +103,19 @@ def train_model() -> dict:
 
     Raises
     ------
+    ImportError
+        If scikit-image, joblib, or scikit-learn are not installed.
     FileNotFoundError
         If the training data directory does not exist.
     ValueError
         If no training images are found.
     """
+    if not _ML_AVAILABLE:
+        raise ImportError(
+            "scikit-image, joblib, and scikit-learn are required for training.  "
+            "Run: pip install scikit-image joblib scikit-learn"
+        )
+
     if not os.path.isdir(TRAINING_DATA_DIR):
         raise FileNotFoundError(
             f"Training data directory not found: {TRAINING_DATA_DIR}\n"
@@ -170,6 +194,9 @@ def main() -> None:
     print(f"Scanning training data in: {TRAINING_DATA_DIR}")
     try:
         result = train_model()
+    except ImportError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -229,6 +229,15 @@ async def train() -> JSONResponse:
             }
         )
 
+    except ImportError as exc:
+        return JSONResponse(
+            status_code=501,
+            content={
+                "success": False,
+                "message": str(exc),
+            },
+        )
+
     except (FileNotFoundError, ValueError) as exc:
         return JSONResponse(
             status_code=422,
