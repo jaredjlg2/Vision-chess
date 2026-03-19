@@ -14,6 +14,7 @@ Usage
     python auto_collect.py -n 100                   # first 100 FENs
     python auto_collect.py -n 100 -s 50             # FENs 50-149
     python auto_collect.py --styles-per-fen 3 -n 50 # 3 styles × 50 FENs
+    python auto_collect.py --piece-style unicode    # force a specific style
 """
 
 from __future__ import annotations
@@ -40,6 +41,12 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 from collect_training_data import collect_squares  # noqa: E402
+from piece_sets import (  # noqa: E402
+    PieceStyle,
+    UnicodePieceStyle,
+    discover_piece_styles,
+    get_random_style,
+)
 
 # ---------------------------------------------------------------------------
 # Board rendering constants
@@ -47,7 +54,7 @@ from collect_training_data import collect_squares  # noqa: E402
 BOARD_PX = 800
 SQUARE_PX = BOARD_PX // 8  # 100
 
-# Unicode chess symbols indexed by python-chess piece symbol
+# Unicode chess symbols (kept for reference; rendering is now in piece_sets.py)
 _PIECE_UNICODE: dict[str, str] = {
     "K": "♔",
     "Q": "♕",
@@ -133,6 +140,9 @@ def render_board(
     flip: bool = False,
     noise_level: float = 0.0,
     font: Optional[ImageFont.FreeTypeFont] = None,
+    piece_style: Optional["PieceStyle"] = None,
+    scale_jitter: float = 0.0,
+    pos_jitter: int = 0,
 ) -> np.ndarray:
     """Render an 800×800 chess board from a FEN string using Pillow.
 
@@ -150,8 +160,18 @@ def render_board(
         Standard deviation (0–255) of Gaussian noise added to the board.  Use
         a small value like 5–15 for subtle variation.
     font:
-        Pre-loaded ``ImageFont`` to use for piece glyphs.  Loaded on-demand if
-        *None*.
+        Pre-loaded ``ImageFont`` to use for piece glyphs when the Unicode style
+        is active.  Loaded on-demand if *None*.
+    piece_style:
+        A :class:`~piece_sets.PieceStyle` instance that handles piece drawing.
+        If *None*, the Unicode style is used (original behavior).
+    scale_jitter:
+        Maximum fractional scale variation applied per board (e.g. 0.15 means
+        the piece size will be randomly multiplied by a factor in [0.85, 1.15]).
+        ``0.0`` disables jitter.
+    pos_jitter:
+        Maximum pixel offset (±) applied to each piece's position independently
+        to simulate imperfect centering.  ``0`` disables positional jitter.
 
     Returns
     -------
@@ -166,8 +186,17 @@ def render_board(
     img = Image.new("RGB", (BOARD_PX, BOARD_PX))
     draw = ImageDraw.Draw(img)
 
-    if font is None:
-        font = _find_unicode_font(size=80)
+    # Resolve piece style: fall back to UnicodePieceStyle if not provided
+    if piece_style is None:
+        if font is None:
+            font = _find_unicode_font(size=80)
+        piece_style = UnicodePieceStyle(font=font)
+
+    # Per-board scale factor
+    if scale_jitter > 0:
+        scale_factor = random.uniform(1.0 - scale_jitter, 1.0 + scale_jitter)
+    else:
+        scale_factor = 1.0
 
     # -- Draw squares --------------------------------------------------------
     for rank_idx in range(8):  # 0 = top row of the image
@@ -190,56 +219,22 @@ def render_board(
             y1 = y0 + SQUARE_PX - 1
             draw.rectangle([x0, y0, x1, y1], fill=sq_color)
 
-            # -- Draw piece glyph -------------------------------------------
+            # -- Draw piece --------------------------------------------------
             square = chess.square(chess_file, chess_rank)
             piece = board.piece_at(square)
             if piece is None:
                 continue
 
-            glyph = _PIECE_UNICODE.get(piece.symbol())
-            if glyph is None:
-                continue
+            # Per-piece position jitter
+            offset_x = random.randint(-pos_jitter, pos_jitter) if pos_jitter > 0 else 0
+            offset_y = random.randint(-pos_jitter, pos_jitter) if pos_jitter > 0 else 0
 
-            if font is not None:
-                # Determine text colour: white pieces → near-white with dark
-                # shadow; black pieces → near-black with light shadow.
-                if piece.color == chess.WHITE:
-                    text_color = (255, 255, 255)
-                    shadow_color = (40, 40, 40)
-                else:
-                    text_color = (20, 20, 20)
-                    shadow_color = (220, 220, 220)
-
-                # Centre the glyph on the square using textbbox
-                bbox_offset_x = 0
-                bbox_offset_y = 0
-                try:
-                    bbox = draw.textbbox((0, 0), glyph, font=font)
-                    glyph_w = bbox[2] - bbox[0]
-                    glyph_h = bbox[3] - bbox[1]
-                    bbox_offset_x = bbox[0]
-                    bbox_offset_y = bbox[1]
-                except AttributeError:
-                    # Pillow <9.2 fallback: getbbox returns (left,top,right,bottom)
-                    fb = font.getbbox(glyph)  # type: ignore[attr-defined]
-                    glyph_w = fb[2] - fb[0]
-                    glyph_h = fb[3] - fb[1]
-                    bbox_offset_x = fb[0]
-                    bbox_offset_y = fb[1]
-
-                cx = x0 + (SQUARE_PX - glyph_w) // 2 - bbox_offset_x
-                cy = y0 + (SQUARE_PX - glyph_h) // 2 - bbox_offset_y
-
-                # Shadow pass (offset by 2px)
-                draw.text((cx + 2, cy + 2), glyph, font=font, fill=shadow_color)
-                # Main glyph
-                draw.text((cx, cy), glyph, font=font, fill=text_color)
-            else:
-                # Fallback: draw FEN letter when no font is available
-                fallback_font = ImageFont.load_default()
-                label = piece.symbol().upper() if piece.color == chess.WHITE else piece.symbol().lower()
-                fg = (255, 255, 255) if piece.color == chess.WHITE else (0, 0, 0)
-                draw.text((x0 + 5, y0 + 5), label, font=fallback_font, fill=fg)
+            piece_style.draw_piece(
+                img, draw, piece, x0, y0, SQUARE_PX,
+                scale_factor=scale_factor,
+                offset_x=offset_x,
+                offset_y=offset_y,
+            )
 
     # -- Optional noise ------------------------------------------------------
     if noise_level > 0:
@@ -369,6 +364,35 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         metavar="N",
         help="Number of different board-style renderings per FEN.",
     )
+    parser.add_argument(
+        "--piece-style",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Force a specific piece style by name (e.g. 'cburnett', 'unicode'). "
+            "Default is random selection from all discovered styles."
+        ),
+    )
+    parser.add_argument(
+        "--scale-jitter",
+        type=float,
+        default=0.15,
+        metavar="F",
+        help=(
+            "Maximum fractional scale jitter applied per board (e.g. 0.15 → "
+            "piece size varies ±15%%). Set to 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--pos-jitter",
+        type=int,
+        default=3,
+        metavar="PX",
+        help=(
+            "Maximum pixel position offset (±) applied per piece to simulate "
+            "imperfect centering. Set to 0 to disable."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -404,13 +428,30 @@ def main(argv: Optional[List[str]] = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     training_dir.mkdir(parents=True, exist_ok=True)
 
-    # -- Pre-load font once --------------------------------------------------
+    # -- Discover piece styles -----------------------------------------------
     font = _find_unicode_font(size=80)
     if font is None:
         print(
-            "Warning: no TrueType font found; pieces will be rendered as "
+            "Warning: no TrueType font found; Unicode pieces will be rendered as "
             "single letters. Install DejaVu or Noto fonts for better output."
         )
+
+    all_styles = discover_piece_styles(font=font)
+    style_names = [s.name for s in all_styles]
+    print(f"Available piece styles: {', '.join(style_names)}")
+
+    # Resolve forced style if --piece-style was given
+    forced_style = None
+    if args.piece_style is not None:
+        matches = [s for s in all_styles if s.name == args.piece_style]
+        if not matches:
+            print(
+                f"Error: piece style '{args.piece_style}' not found. "
+                f"Available styles: {', '.join(style_names)}"
+            )
+            sys.exit(1)
+        forced_style = matches[0]
+        print(f"Forcing piece style: {forced_style.name}")
 
     # -- Main loop -----------------------------------------------------------
     t0 = time.time()
@@ -423,8 +464,19 @@ def main(argv: Optional[List[str]] = None) -> None:
             flip = random.random() < 0.5
             noise = random.uniform(3, 12)
 
+            # Select piece style for this board
+            piece_style = forced_style if forced_style is not None else get_random_style(all_styles)
+
             # Render board
-            bgr = render_board(fen, theme=theme, flip=flip, noise_level=noise, font=font)
+            bgr = render_board(
+                fen,
+                theme=theme,
+                flip=flip,
+                noise_level=noise,
+                piece_style=piece_style,
+                scale_jitter=args.scale_jitter,
+                pos_jitter=args.pos_jitter,
+            )
 
             # Save board image
             img_name = f"chess{img_counter:04d}.png"
@@ -446,7 +498,9 @@ def main(argv: Optional[List[str]] = None) -> None:
             flip_str = " (flipped)" if flip else ""
             print(
                 f"[{fen_idx}/{total_fens}] FEN: {fen[:50]}{'…' if len(fen) > 50 else ''}"
-                f" → {img_name}{flip_str} → {squares} squares saved"
+                f" → {img_name}{flip_str}"
+                f" [style={piece_style.name}]"
+                f" → {squares} squares saved"
             )
 
             img_counter += 1
