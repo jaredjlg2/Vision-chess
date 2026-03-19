@@ -1,0 +1,26 @@
+# Piece Set Attributions
+
+This directory contains chess piece SVG images from various open-licensed sources.
+
+## cburnett
+- **Author**: Colin M.L. Burnett
+- **License**: CC0 1.0 Universal (Public Domain Dedication)
+- **Source**: https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+- **Original**: https://en.wikipedia.org/wiki/User:Cburnett/GFDL_images/Chess
+
+## merida
+- **Author**: Armando Hernandez Marroquin
+- **License**: CC0 1.0 Universal (Public Domain Dedication)
+- **Source**: https://github.com/lichess-org/lila/tree/master/public/piece/merida
+
+## pirouetti
+- **Author**: Unknown / Lichess contributors
+- **License**: CC0 1.0 Universal (Public Domain Dedication)
+- **Source**: https://github.com/lichess-org/lila/tree/master/public/piece/pirouetti
+
+## alpha
+- **Author**: Eric Bentzen
+- **License**: Creative Commons Attribution-ShareAlike 3.0 (CC-BY-SA)
+- **Source**: https://github.com/lichess-org/lila/tree/master/public/piece/alpha
+- **Note**: This set requires attribution. If you redistribute derivative works
+  that include this set, credit Eric Bentzen and license under CC-BY-SA.

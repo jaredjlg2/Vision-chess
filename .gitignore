@@ -215,6 +215,10 @@ __marimo__/
 # Ignore trained models
 backend/piece_model.joblib
 
+# Ignore user drop-in piece sets (except the .gitkeep placeholder)
+backend/piece_sets/custom/*
+!backend/piece_sets/custom/.gitkeep
+
 # Python cache
 __pycache__/
 *.pyc
