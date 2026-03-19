@@ -90,8 +90,65 @@ The API will be available at **http://localhost:8000**.
 |--------|------|-------------|
 | `GET`  | `/health` | Liveness check — returns `{"status":"ok"}` |
 | `POST` | `/api/detect` | Upload an image; returns `{"success":true,"fen":"...","message":"..."}` |
+| `POST` | `/api/collect-training-data` | Save labeled square images from a board photo + FEN |
+| `POST` | `/api/train` | Train the HOG+SVM classifier from collected data |
 
-The `/api/detect` endpoint accepts `multipart/form-data` with a field named `file`.
+The `/api/detect` and `/api/collect-training-data` endpoints accept `multipart/form-data` with a field named `file`.
+
+---
+
+## Training the Piece Classifier
+
+### 1. Collect Training Data
+
+The `auto_collect.py` script renders chess-board images from FEN strings and
+saves labeled square images into `backend/training_data/`.
+
+```bash
+cd backend
+
+# Process all FENs in the default data file
+python auto_collect.py
+
+# Process the first 100 FENs
+python auto_collect.py -n 100
+
+# Process FENs 50-149
+python auto_collect.py -n 100 -s 50
+
+# Generate 3 different board styles per FEN (more variety)
+python auto_collect.py --styles-per-fen 3 -n 50
+
+# Force a specific piece style
+python auto_collect.py --piece-style unicode
+```
+
+You can also collect data from a real board photo via the API:
+
+```bash
+curl -X POST http://localhost:8000/api/collect-training-data \
+  -F "file=@/path/to/board_photo.jpg" \
+  -F "fen=rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+```
+
+### 2. Train the Classifier
+
+Once training data has been collected, run:
+
+```bash
+cd backend
+python train_classifier.py
+```
+
+This trains a HOG + SVM model and saves it as `backend/piece_model.joblib`.
+The backend will automatically use the new model on the next inference call
+(no restart required).
+
+**Prerequisites:**
+
+```bash
+pip install scikit-learn scikit-image joblib
+```
 
 ---
 
